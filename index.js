@@ -39,7 +39,8 @@ async function ilpFetch (url, _opts) {
   const maxPrice = opts.maxPrice
   const plugin = opts.plugin || require('ilp-plugin')()
 
-  if (!maxPrice) {
+  // Allow maxPrice of 0
+  if (maxPrice == undefined) {
     throw new Error('opts.maxPrice must be specified on paid request')
   }
 
