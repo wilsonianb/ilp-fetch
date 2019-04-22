@@ -9,7 +9,6 @@ const base64url = buffer => buffer.toString('base64')
 const PSK_IDENTIFIER = 'interledger-psk'
 const PSK_2_IDENTIFIER = 'interledger-psk2'
 const STREAM_IDENTIFIER = 'interledger-stream'
-const handlePsk2Request = require('./src/psk2')
 const handleStreamRequest = require('./src/stream')
 
 async function ilpFetch (url, _opts) {
@@ -50,11 +49,6 @@ async function ilpFetch (url, _opts) {
 
   let handler
   switch (payMethod) {
-    case PSK_2_IDENTIFIER:
-      log.trace('using PSK2 handler.')
-      handler = handlePsk2Request
-      break
-
     case STREAM_IDENTIFIER:
       log.trace('using STREAM handler.')
       handler = handleStreamRequest
@@ -62,6 +56,8 @@ async function ilpFetch (url, _opts) {
 
     case PSK_IDENTIFIER:
       log.warn('PSK1 is no longer supported. use `superagent-ilp` for legacy PSK.')
+    case PSK_2_IDENTIFIER:
+      log.warn('PSK2 is no longer supported.')
     default:
       log.error('no handler exists for payment method. method=' + payMethod)
       throw new Error('unsupported payment method in `Pay`. ' +
