@@ -1,17 +1,22 @@
-const fetch = require('node-fetch')
-const log = require('ilp-logger')('ilp-fetch')
-const crypto = require('crypto')
-const base64url = buffer => buffer.toString('base64')
+import { default as fetch } from 'node-fetch'
+import createLogger from 'ilp-logger'
+import * as crypto from 'crypto'
+import createPlugin from 'ilp-plugin'
+import { default as handleStreamRequest } from './stream'
+import { FetchOptions, FetchResponse } from './types/fetch'
+
+const base64url = (buffer: Buffer) => buffer.toString('base64')
   .replace(/=/g, '')
   .replace(/\+/g, '-')
   .replace(/\//g, '_')
 
+const log = createLogger('ilp-fetch')
+
 const PSK_IDENTIFIER = 'interledger-psk'
 const PSK_2_IDENTIFIER = 'interledger-psk2'
 const STREAM_IDENTIFIER = 'interledger-stream'
-const handleStreamRequest = require('./src/stream')
 
-async function ilpFetch (url, _opts) {
+export default async function ilpFetch (url: string, _opts: FetchOptions): Promise<FetchResponse> {
   // Generate the payment token to go along with our requests
   const payToken = _opts.payToken || crypto.randomBytes(16)
   const payTokenText = base64url(payToken)
@@ -31,12 +36,11 @@ async function ilpFetch (url, _opts) {
   // required.
   if (firstTry.status !== 402) {
     log.info('request is not paid. returning result.')
-    firstTry.price = '0'
-    return firstTry
+    return new FetchResponse(firstTry, '0')
   }
 
   const maxPrice = opts.maxPrice
-  const plugin = opts.plugin || require('ilp-plugin')()
+  const plugin = opts.plugin || createPlugin()
 
   if (!maxPrice) {
     throw new Error('opts.maxPrice must be specified on paid request')
@@ -44,31 +48,28 @@ async function ilpFetch (url, _opts) {
 
   // Parse the `Pay` header to determine how to pay the receiver. A handler is
   // selected by checking what the payment method is.
-  const [ payMethod, ...payParams ] = firstTry.headers.get('Pay').split(' ')
+  const [ payMethod, ...payParams ] = firstTry.headers.get('Pay')!.split(' ')
   log.trace('parsed `Pay` header. method=' + payMethod, 'params=', payParams)
 
-  let handler
-  switch (payMethod) {
-    case STREAM_IDENTIFIER:
-      log.trace('using STREAM handler.')
-      handler = handleStreamRequest
-      break
-
-    case PSK_IDENTIFIER:
+  if (payMethod !== STREAM_IDENTIFIER) {
+    if (payMethod === PSK_IDENTIFIER) {
       log.warn('PSK1 is no longer supported. use `superagent-ilp` for legacy PSK.')
-    case PSK_2_IDENTIFIER:
+    } else if (PSK_2_IDENTIFIER) {
       log.warn('PSK2 is no longer supported.')
-    default:
-      log.error('no handler exists for payment method. method=' + payMethod)
-      throw new Error('unsupported payment method in `Pay`. ' +
-        'header=' + firstTry.headers.get('Pay'))
+    }
+    log.error('no handler exists for payment method. method=' + payMethod)
+    throw new Error('unsupported payment method in `Pay`. ' +
+      'header=' + firstTry.headers.get('Pay'))
   }
+
+  log.trace('using STREAM handler.')
+  const handler = handleStreamRequest
 
   log.trace('connecting plugin')
   await plugin.connect()
 
   log.trace('calling handler.')
-  const result = await handler({ firstTry, url, opts, payParams, plugin, payToken })
+  const result = await handler(url, opts, payParams, plugin, payToken, maxPrice)
 
   // clean up the plugin if ilp-fetch created it
   if (!opts.plugin) {
@@ -77,5 +78,3 @@ async function ilpFetch (url, _opts) {
 
   return result
 }
-
-module.exports = ilpFetch
